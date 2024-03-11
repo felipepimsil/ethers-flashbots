@@ -13,7 +13,7 @@ use ethers::{
     providers::{Middleware, MiddlewareError, PendingTransaction},
     signers::Signer,
 };
-use futures_util::future;
+use futures_util::{future, TryFutureExt};
 use thiserror::Error;
 use url::Url;
 
@@ -40,6 +40,9 @@ pub enum FlashbotsMiddlewareError<M: Middleware, S: Signer> {
     /// An error occured in one of the middlewares.
     #[error("{0}")]
     MiddlewareError(M::Error),
+
+    #[error("relay error  --  url: {url}  --  detail: {detail}")]
+    Relay { detail: RelayError<S>, url: String },
 
     #[error("Relay Timeout")]
     RelayTimeout,
@@ -207,6 +210,7 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
             bundle.block().unwrap(),
             bundle.transaction_hashes(),
             self.provider(),
+            self.relay.url().clone(),
         ))
     }
 
@@ -453,9 +457,13 @@ impl<M: Middleware, S: Signer> BroadcasterMiddleware<M, S> {
                                 bundle.block().unwrap(),
                                 bundle.transaction_hashes(),
                                 self.provider(),
+                                relay.url().clone(),
                             )
                         })
-                        .map_err(FlashbotsMiddlewareError::RelayError),
+                        .map_err(|err| FlashbotsMiddlewareError::Relay {
+                            detail: err,
+                            url: relay.url().to_string(),
+                        }),
 
                     Err(_) => Err(FlashbotsMiddlewareError::RelayTimeout),
                 }

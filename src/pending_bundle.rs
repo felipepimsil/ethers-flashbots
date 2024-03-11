@@ -12,6 +12,7 @@ use std::{
     task::{Context, Poll},
 };
 use thiserror::Error;
+use url::Url;
 
 /// A pending bundle is one that has been submitted to a relay,
 /// but not yet included.
@@ -34,6 +35,7 @@ pub struct PendingBundle<'a, P> {
     provider: &'a Provider<P>,
     state: PendingBundleState<'a>,
     interval: Box<dyn Stream<Item = ()> + Send + Unpin>,
+    url: Url,
 }
 
 impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
@@ -42,6 +44,7 @@ impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
         block: U64,
         transactions: Vec<TxHash>,
         provider: &'a Provider<P>,
+        url: Url,
     ) -> Self {
         Self {
             bundle_hash,
@@ -50,6 +53,7 @@ impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
             provider,
             state: PendingBundleState::PausedGettingBlock,
             interval: Box::new(interval(DEFAULT_POLL_INTERVAL)),
+            url,
         }
     }
 
@@ -57,6 +61,10 @@ impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
     #[deprecated(note = "use the bundle_hash field instead")]
     pub fn bundle_hash(&self) -> BundleHash {
         self.bundle_hash
+    }
+
+    pub fn url(&self) -> &Url {
+        &self.url
     }
 }
 

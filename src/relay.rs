@@ -66,6 +66,10 @@ impl<S: Signer> Relay<S> {
         }
     }
 
+    pub fn url(&self) -> &Url {
+        &self.url
+    }
+
     /// Sends a request with the provided method to the relay, with the
     /// parameters serialized as JSON.
     pub async fn request<T: Serialize + Send + Sync, R: DeserializeOwned>(
