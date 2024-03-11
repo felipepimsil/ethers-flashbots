@@ -32,10 +32,10 @@ pub struct PendingBundle<'a, P> {
     pub bundle_hash: BundleHash,
     pub block: U64,
     pub transactions: Vec<TxHash>,
+    pub url: Url,
     provider: &'a Provider<P>,
     state: PendingBundleState<'a>,
     interval: Box<dyn Stream<Item = ()> + Send + Unpin>,
-    url: Url,
 }
 
 impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
@@ -61,10 +61,6 @@ impl<'a, P: JsonRpcClient> PendingBundle<'a, P> {
     #[deprecated(note = "use the bundle_hash field instead")]
     pub fn bundle_hash(&self) -> BundleHash {
         self.bundle_hash
-    }
-
-    pub fn url(&self) -> &Url {
-        &self.url
     }
 }
 
