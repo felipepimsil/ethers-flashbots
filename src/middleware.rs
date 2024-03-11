@@ -40,6 +40,9 @@ pub enum FlashbotsMiddlewareError<M: Middleware, S: Signer> {
     /// An error occured in one of the middlewares.
     #[error("{0}")]
     MiddlewareError(M::Error),
+
+    #[error("Relay Timeout")]
+    RelayTimeout,
 }
 
 impl<M: Middleware, S: Signer> MiddlewareError for FlashbotsMiddlewareError<M, S> {
@@ -374,7 +377,7 @@ impl<M: Middleware, S: Signer> BroadcasterMiddleware<M, S> {
                 .into_iter()
                 .map(|r| Relay::new(r, Some(relay_signer.clone())))
                 .collect(),
-            simulation_relay: Relay::new(simulation_relay, Some(relay_signer.clone())),
+            simulation_relay: Relay::new(simulation_relay, None),
         }
     }
 
@@ -436,17 +439,26 @@ impl<M: Middleware, S: Signer> BroadcasterMiddleware<M, S> {
             .relays
             .iter()
             .map(|relay| async move {
-                let response = relay.request("eth_sendBundle", [bundle]).await;
-                response
-                    .map(|r: SendBundleResponse| {
-                        PendingBundle::new(
-                            r.bundle_hash,
-                            bundle.block().unwrap(),
-                            bundle.transaction_hashes(),
-                            self.provider(),
-                        )
-                    })
-                    .map_err(FlashbotsMiddlewareError::RelayError)
+                let timeout_respose = tokio::time::timeout(
+                    tokio::time::Duration::from_secs(2),
+                    relay.request("eth_sendBundle", [bundle]),
+                )
+                .await;
+
+                match timeout_respose {
+                    Ok(response) => response
+                        .map(|r: SendBundleResponse| {
+                            PendingBundle::new(
+                                r.bundle_hash,
+                                bundle.block().unwrap(),
+                                bundle.transaction_hashes(),
+                                self.provider(),
+                            )
+                        })
+                        .map_err(FlashbotsMiddlewareError::RelayError),
+
+                    Err(_) => Err(FlashbotsMiddlewareError::RelayTimeout),
+                }
             })
             .collect::<Vec<_>>();
 
