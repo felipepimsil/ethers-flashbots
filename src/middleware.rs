@@ -1,5 +1,5 @@
 use crate::{
-    bundle::{BundleHash, BundleRequest, BundleStats, SimulatedBundle},
+    bundle::{BundleHash, BundleRequest, BundleStats, MevBundleRequest, SimulatedBundle},
     pending_bundle::PendingBundle,
     relay::{GetBundleStatsParams, GetUserStatsParams, Relay, RelayError, SendBundleResponse},
     UserStats,
@@ -202,6 +202,38 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
         let response: SendBundleResponse = self
             .relay
             .request("eth_sendBundle", [bundle])
+            .await
+            .map_err(FlashbotsMiddlewareError::RelayError)?;
+
+        Ok(PendingBundle::new(
+            response.bundle_hash,
+            bundle.block().unwrap(),
+            bundle.transaction_hashes(),
+            self.provider(),
+            self.relay.url().clone(),
+        ))
+    }
+
+    pub async fn mev_send_bundle(
+        &self,
+        bundle: &BundleRequest,
+    ) -> Result<PendingBundle<'_, <Self as Middleware>::Provider>, FlashbotsMiddlewareError<M, S>>
+    {
+        // The target block must be set
+        bundle
+            .block()
+            .ok_or(FlashbotsMiddlewareError::MissingParameters)?;
+
+        // `min_timestamp` and `max_timestamp` must both either be unset or set.
+        if bundle.min_timestamp().xor(bundle.max_timestamp()).is_some() {
+            return Err(FlashbotsMiddlewareError::MissingParameters);
+        }
+
+        let mev_bundle = MevBundleRequest::from_bundle_request(bundle);
+
+        let response: SendBundleResponse = self
+            .relay
+            .request("mev_sendBundle", [mev_bundle])
             .await
             .map_err(FlashbotsMiddlewareError::RelayError)?;
 

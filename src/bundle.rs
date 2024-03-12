@@ -1,4 +1,7 @@
-use crate::utils::{deserialize_optional_h160, deserialize_u256, deserialize_u64};
+use crate::{
+    utils::{deserialize_optional_h160, deserialize_u256, deserialize_u64},
+    FlashbotsMiddleware,
+};
 use chrono::{DateTime, Utc};
 use ethers::core::{
     types::{transaction::response::Transaction, Address, Bytes, TxHash, H256, U256, U64},
@@ -78,6 +81,81 @@ pub struct BundleRequest {
     simulation_basefee: Option<u64>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MevBundleRequest {
+    version: String,
+    inclusion: MevInclusion,
+    privacy: MevPrivacy,
+    body: Vec<MevBody>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MevBody {
+    #[serde(serialize_with = "serialize_tx")]
+    tx: BundleTransaction,
+
+    can_revert: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MevPrivacy {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hints: Option<Vec<String>>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    builders: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MevInclusion {
+    block: U64,
+    max_block: U64,
+}
+
+impl MevBundleRequest {
+    pub fn from_bundle_request(bundle: &BundleRequest) -> Self {
+        MevBundleRequest {
+            version: "v0.1".to_string(),
+            body: bundle
+                .transactions
+                .iter()
+                .map(|tx| MevBody {
+                    tx: tx.clone(),
+                    can_revert: false,
+                })
+                .collect(),
+            inclusion: MevInclusion {
+                block: bundle.target_block.unwrap(),
+                max_block: bundle.target_block.unwrap(),
+            },
+            privacy: MevPrivacy {
+                hints: Some(vec!["logs".to_string()]),
+                builders: Some(vec![
+                    "rpc.flashbots.net".to_string(),
+                    "https://rpc.f1b.io".to_string(),
+                    "rsync-builder.xyz".to_string(),
+                    "rpc.beaverbuild.org".to_string(),
+                    "builder0x69.io".to_string(),
+                    "rpc.titanbuilder.xyz".to_string(),
+                    "builder.eigenphi.io".to_string(),
+                    "boba-builder.com/searcher/bundle".to_string(),
+                    "https://builder.gmbit.co/rpc".to_string(),
+                    "rpc.payload.de".to_string(),
+                    "rpc.lokibuilder.xyz".to_string(),
+                    "https://buildai.net".to_string(),
+                    "rpc.mevshare.jetbldr.xyz".to_string(),
+                    "flashbots.rpc.tbuilder.xyz".to_string(),
+                    "rpc.penguinbuild.org".to_string(),
+                ]),
+            },
+        }
+    }
+}
+
 pub fn serialize_txs<S>(txs: &[BundleTransaction], s: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -91,6 +169,18 @@ where
         .collect();
 
     raw_txs.serialize(s)
+}
+
+pub fn serialize_tx<S>(tx: &BundleTransaction, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let txn = match tx {
+        BundleTransaction::Signed(inner) => inner.rlp(),
+        BundleTransaction::Raw(inner) => inner.clone(),
+    };
+
+    txn.serialize(s)
 }
 
 impl BundleRequest {
