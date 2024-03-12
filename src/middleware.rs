@@ -231,19 +231,40 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
 
         let mev_bundle = MevBundleRequest::from_bundle_request(bundle);
 
-        let response: SendBundleResponse = self
-            .relay
-            .request("mev_sendBundle", [mev_bundle])
-            .await
-            .map_err(FlashbotsMiddlewareError::RelayError)?;
+        let timeout_response = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            self.relay
+                .request::<_, SendBundleResponse>("mev_sendBundle", [mev_bundle]),
+        )
+        .await;
 
-        Ok(PendingBundle::new(
-            response.bundle_hash,
-            bundle.block().unwrap(),
-            bundle.transaction_hashes(),
-            self.provider(),
-            self.relay.url().clone(),
-        ))
+        match timeout_response {
+            Ok(Ok(r)) => Ok(PendingBundle::new(
+                r.bundle_hash,
+                bundle.block().unwrap(),
+                bundle.transaction_hashes(),
+                self.provider(),
+                self.relay.url().clone(),
+            )),
+
+            Ok(Err(err)) => Err(err.into()),
+
+            Err(_) => Err(FlashbotsMiddlewareError::RelayTimeout),
+        }
+
+        // // self
+        // //     .relay
+        // //     .request("mev_sendBundle", [mev_bundle])
+        // //     .await
+        // //     .map_err(FlashbotsMiddlewareError::RelayError)?;
+
+        // Ok(PendingBundle::new(
+        //     response.bundle_hash,
+        //     bundle.block().unwrap(),
+        //     bundle.transaction_hashes(),
+        //     self.provider(),
+        //     self.relay.url().clone(),
+        // ))
     }
 
     /// Get stats for a particular bundle.
