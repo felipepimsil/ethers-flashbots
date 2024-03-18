@@ -3,9 +3,12 @@ use crate::{
     FlashbotsMiddleware,
 };
 use chrono::{DateTime, Utc};
-use ethers::core::{
-    types::{transaction::response::Transaction, Address, Bytes, TxHash, H256, U256, U64},
-    utils::keccak256,
+use ethers::{
+    core::{
+        types::{transaction::response::Transaction, Address, Bytes, TxHash, H256, U256, U64},
+        utils::keccak256,
+    },
+    types::H160,
 };
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -92,6 +95,26 @@ pub struct MevBundleRequest {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EndOfBlockBundleRequest {
+    #[serde(rename = "txs")]
+    #[serde(serialize_with = "serialize_txs")]
+    transactions: Vec<BundleTransaction>,
+
+    #[serde(rename = "revertingTxHashes")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    revertible_transaction_hashes: Vec<H256>,
+
+    #[serde(rename = "blockNumber")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    target_block: Option<U64>,
+
+    #[serde(rename = "targetPools")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    target_pools: Vec<H160>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MevBody {
     #[serde(serialize_with = "serialize_tx")]
     tx: BundleTransaction,
@@ -152,6 +175,17 @@ impl MevBundleRequest {
                     "penguinbuild".to_string(),
                 ]),
             },
+        }
+    }
+}
+
+impl EndOfBlockBundleRequest {
+    pub fn from_bundle_request(bundle: &BundleRequest, target_pools: Vec<H160>) -> Self {
+        EndOfBlockBundleRequest {
+            transactions: bundle.transactions.clone(),
+            revertible_transaction_hashes: bundle.revertible_transaction_hashes.clone(),
+            target_block: bundle.target_block.clone(),
+            target_pools,
         }
     }
 }

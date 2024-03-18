@@ -1,5 +1,8 @@
 use crate::{
-    bundle::{BundleHash, BundleRequest, BundleStats, MevBundleRequest, SimulatedBundle},
+    bundle::{
+        BundleHash, BundleRequest, BundleStats, EndOfBlockBundleRequest, MevBundleRequest,
+        SimulatedBundle,
+    },
     pending_bundle::PendingBundle,
     relay::{GetBundleStatsParams, GetUserStatsParams, Relay, RelayError, SendBundleResponse},
     UserStats,
@@ -12,6 +15,7 @@ use ethers::{
     },
     providers::{Middleware, MiddlewareError, PendingTransaction},
     signers::Signer,
+    types::H160,
 };
 use futures_util::{future, TryFutureExt};
 use thiserror::Error;
@@ -265,6 +269,49 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
         //     self.provider(),
         //     self.relay.url().clone(),
         // ))
+    }
+
+    pub async fn send_end_of_block_bundle(
+        &self,
+        bundle: &BundleRequest,
+        target_pools: Vec<H160>,
+    ) -> Result<PendingBundle<'_, <Self as Middleware>::Provider>, FlashbotsMiddlewareError<M, S>>
+    {
+        // The target block must be set
+        bundle
+            .block()
+            .ok_or(FlashbotsMiddlewareError::MissingParameters)?;
+
+        // `min_timestamp` and `max_timestamp` must both either be unset or set.
+        if bundle.min_timestamp().xor(bundle.max_timestamp()).is_some() {
+            return Err(FlashbotsMiddlewareError::MissingParameters);
+        }
+
+        let end_of_block_bundle =
+            EndOfBlockBundleRequest::from_bundle_request(bundle, target_pools);
+
+        let timeout_response = tokio::time::timeout(
+            tokio::time::Duration::from_secs(2),
+            self.relay.request::<_, SendBundleResponse>(
+                "eth_sendEndOfBlockBundle",
+                [end_of_block_bundle],
+            ),
+        )
+        .await;
+
+        match timeout_response {
+            Ok(Ok(r)) => Ok(PendingBundle::new(
+                r.bundle_hash,
+                bundle.block().unwrap(),
+                bundle.transaction_hashes(),
+                self.provider(),
+                self.relay.url().clone(),
+            )),
+
+            Ok(Err(err)) => Err(err.into()),
+
+            Err(_) => Err(FlashbotsMiddlewareError::RelayTimeout),
+        }
     }
 
     /// Get stats for a particular bundle.
