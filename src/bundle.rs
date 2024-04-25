@@ -1,7 +1,4 @@
-use crate::{
-    utils::{deserialize_optional_h160, deserialize_u256, deserialize_u64},
-    FlashbotsMiddleware,
-};
+use crate::utils::{deserialize_optional_h160, deserialize_u256, deserialize_u64};
 use chrono::{DateTime, Utc};
 use ethers::{
     core::{

@@ -17,7 +17,7 @@ use ethers::{
     signers::Signer,
     types::H160,
 };
-use futures_util::{future, TryFutureExt};
+use futures_util::future;
 use thiserror::Error;
 use url::Url;
 
@@ -312,6 +312,36 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
 
             Err(_) => Err(FlashbotsMiddlewareError::RelayTimeout),
         }
+    }
+
+    pub async fn send_backrun_block_bundle(
+        &self,
+        bundle: &BundleRequest,
+    ) -> Result<PendingBundle<'_, <Self as Middleware>::Provider>, FlashbotsMiddlewareError<M, S>>
+    {
+        // The target block must be set
+        bundle
+            .block()
+            .ok_or(FlashbotsMiddlewareError::MissingParameters)?;
+
+        // `min_timestamp` and `max_timestamp` must both either be unset or set.
+        if bundle.min_timestamp().xor(bundle.max_timestamp()).is_some() {
+            return Err(FlashbotsMiddlewareError::MissingParameters);
+        }
+
+        let response: SendBundleResponse = self
+            .relay
+            .request("eth_sendBackrunBlockBundle", [bundle])
+            .await
+            .map_err(FlashbotsMiddlewareError::RelayError)?;
+
+        Ok(PendingBundle::new(
+            response.bundle_hash,
+            bundle.block().unwrap(),
+            bundle.transaction_hashes(),
+            self.provider(),
+            self.relay.url().clone(),
+        ))
     }
 
     /// Get stats for a particular bundle.
