@@ -15,7 +15,7 @@ use ethers::{
     },
     providers::{Middleware, MiddlewareError, PendingTransaction},
     signers::Signer,
-    types::H160,
+    types::{H160, H256},
 };
 use futures_util::future;
 use thiserror::Error;
@@ -383,6 +383,35 @@ impl<M: Middleware, S: Signer> FlashbotsMiddleware<M, S> {
             .await
             .map_err(FlashbotsMiddlewareError::RelayError)
     }
+
+    pub async fn send_raw_transaction<'a>(
+        &'a self,
+        tx: Bytes,
+    ) -> Result<H256, FlashbotsMiddlewareError<M, S>> {
+        // The target block must be set
+        let tx_hash = keccak256(&tx);
+
+        self.relay
+            .request("eth_sendRawTransaction", [tx])
+            .await
+            .map_err(FlashbotsMiddlewareError::RelayError)?;
+
+        Ok(tx_hash.into())
+    }
+
+    pub async fn send_private_raw_transaction<'a>(
+        &'a self,
+        tx: Bytes,
+    ) -> Result<H256, FlashbotsMiddlewareError<M, S>> {
+        let tx_hash = keccak256(&tx);
+
+        self.relay
+            .request("eth_sendPrivateRawTransaction", [tx])
+            .await
+            .map_err(FlashbotsMiddlewareError::RelayError)?;
+
+        Ok(tx_hash.into())
+    }
 }
 
 #[async_trait]
@@ -403,29 +432,35 @@ where
         &'a self,
         tx: Bytes,
     ) -> Result<PendingTransaction<'a, Self::Provider>, Self::Error> {
+        // The target block must be set
         let tx_hash = keccak256(&tx);
 
-        // Get the latest block
-        let latest_block = self
-            .inner
-            .get_block(BlockNumber::Latest)
+        self.relay
+            .request("eth_sendRawTransaction", [tx])
             .await
-            .map_err(FlashbotsMiddlewareError::MiddlewareError)?
-            .expect("The latest block is pending (this should not happen)");
-
-        // Construct the bundle, assuming that the target block is the
-        // next block.
-        let bundle = BundleRequest::new().push_transaction(tx.clone()).set_block(
-            latest_block
-                .number
-                .expect("The latest block is pending (this should not happen)")
-                + 1,
-        );
-
-        self.send_bundle(&bundle).await?;
+            .map_err(FlashbotsMiddlewareError::RelayError)?;
 
         Ok(PendingTransaction::new(tx_hash.into(), self.provider())
             .interval(self.provider().get_interval()))
+
+        // // Get the latest block
+        // let latest_block = self
+        //     .inner
+        //     .get_block(BlockNumber::Latest)
+        //     .await
+        //     .map_err(FlashbotsMiddlewareError::MiddlewareError)?
+        //     .expect("The latest block is pending (this should not happen)");
+
+        // // Construct the bundle, assuming that the target block is the
+        // // next block.
+        // let bundle = BundleRequest::new().push_transaction(tx.clone()).set_block(
+        //     latest_block
+        //         .number
+        //         .expect("The latest block is pending (this should not happen)")
+        //         + 1,
+        // );
+
+        // self.send_bundle(&bundle).await?;
     }
 }
 
